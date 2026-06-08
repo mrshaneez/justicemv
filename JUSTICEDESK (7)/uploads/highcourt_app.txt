@@ -1,0 +1,992 @@
+import { useState, useRef, useEffect } from "react";
+
+const S = {
+  accent: "#1a2744", accentMid: "#243660", accentLight: "#e8ecf5",
+  gold: "#b8933a", goldLight: "#f5edd8",
+  surface: "var(--color-background-primary)", surface2: "var(--color-background-secondary)", surface3: "var(--color-background-tertiary)",
+  border: "var(--color-border-tertiary)", border2: "var(--color-border-secondary)",
+  text: "var(--color-text-primary)", muted: "var(--color-text-secondary)", hint: "var(--color-text-tertiary)",
+  success: "var(--color-background-success)", successT: "var(--color-text-success)",
+  warn: "var(--color-background-warning)", warnT: "var(--color-text-warning)",
+  danger: "var(--color-background-danger)", dangerT: "var(--color-text-danger)",
+  info: "var(--color-background-info)", infoT: "var(--color-text-info)",
+};
+
+const JUDGES = ["Hon. Ibrahim Rasheed","Hon. Aminath Didi","Hon. Mohamed Waheed","Hon. Fathimath Nisreen","Hon. Ahmed Shiyam"];
+const LAWYERS = ["Ali Hassan","Sara Moosa","Ismail Niyaz","Mariyam Afza","Hussain Riza","Aishath Laila"];
+const COURTS = ["Courtroom 1","Courtroom 2","Courtroom 3"];
+const TIME_SLOTS = ["08:00","08:30","09:00","09:30","10:00","10:30","11:00","11:30","12:00","12:30","13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30"];
+const weekDays = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+const today = new Date();
+const fmt = (d) => d.toISOString().split("T")[0];
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x; };
+
+const initCases = [
+  { id:"HC/2024/001", title:"State v. Abdullah Rasheed", type:"Criminal", status:"Active", filed:"2024-01-10", presiding:JUDGES[0], judges:[JUDGES[0],JUDGES[1],JUDGES[2]], petitioner:{name:"State of Maldives",lawyers:["Ali Hassan"]}, respondent:{name:"Abdullah Rasheed",lawyers:["Sara Moosa"]}, hearings:[], tasks:[{id:1,text:"File initial submission",done:true,assignee:"Ali Hassan",due:"2024-02-01",priority:"High"},{id:2,text:"Schedule next hearing",done:false,assignee:"Clerk A",due:"2024-05-01",priority:"Medium"}], requests:[] },
+  { id:"HC/2024/002", title:"Fathimath v. Bank of Maldives", type:"Civil", status:"Active", filed:"2024-02-20", presiding:JUDGES[1], judges:[JUDGES[1],JUDGES[2],JUDGES[3]], petitioner:{name:"Fathimath Ali",lawyers:["Ismail Niyaz"]}, respondent:{name:"Bank of Maldives",lawyers:["Mariyam Afza"]}, hearings:[], tasks:[{id:1,text:"Review filed documents",done:false,assignee:JUDGES[1],due:"2024-05-10",priority:"High"}], requests:[] },
+  { id:"HC/2024/003", title:"In re: Estate of Hassan Ibrahim", type:"Probate", status:"Pending", filed:"2024-03-05", presiding:JUDGES[3], judges:[JUDGES[3],JUDGES[4],JUDGES[0]], petitioner:{name:"Hassan Ibrahim Estate",lawyers:["Aishath Laila"]}, respondent:null, hearings:[], tasks:[], requests:[] },
+  { id:"HC/2024/004", title:"Maldives Ports v. Reef Shipping", type:"Commercial", status:"Active", filed:"2023-11-01", presiding:JUDGES[2], judges:[JUDGES[2],JUDGES[4],JUDGES[1]], petitioner:{name:"Maldives Ports Ltd.",lawyers:["Hussain Riza"]}, respondent:{name:"Reef Shipping Co.",lawyers:["Ali Hassan","Sara Moosa"]}, hearings:[], tasks:[], requests:[] },
+];
+
+const initTargets = [
+  { id:1, type:"Case Resolution", description:"Close 20 criminal cases by Q2", metric:20, current:8, deadline:"2024-06-30", assignee:"All Judges" },
+  { id:2, type:"Hearing Completion", description:"Complete 50 hearings this month", metric:50, current:31, deadline:"2024-04-30", assignee:"Court Admin" },
+  { id:3, type:"Performance", description:"Hon. Ibrahim Rasheed: resolve 5 cases", metric:5, current:2, deadline:"2024-05-31", assignee:JUDGES[0] },
+];
+
+const initBookings = [
+  { id:1, caseId:"HC/2024/001", caseTitle:"State v. Abdullah Rasheed", courtroom:"Courtroom 1", date:fmt(addDays(today,1)), timeStart:"09:00", timeEnd:"10:30", judges:[JUDGES[0],JUDGES[1],JUDGES[2]], parties:["State of Maldives","Abdullah Rasheed"], lawyers:["Ali Hassan","Sara Moosa"], notes:"Initial hearing", status:"Confirmed" },
+  { id:2, caseId:"HC/2024/002", caseTitle:"Fathimath v. Bank of Maldives", courtroom:"Courtroom 2", date:fmt(addDays(today,1)), timeStart:"11:00", timeEnd:"12:00", judges:[JUDGES[1],JUDGES[2],JUDGES[3]], parties:["Fathimath Ali","Bank of Maldives"], lawyers:["Ismail Niyaz","Mariyam Afza"], notes:"", status:"Confirmed" },
+  { id:3, caseId:"HC/2024/004", caseTitle:"Maldives Ports v. Reef Shipping", courtroom:"Courtroom 1", date:fmt(addDays(today,3)), timeStart:"09:30", timeEnd:"11:30", judges:[JUDGES[2],JUDGES[4],JUDGES[1]], parties:["Maldives Ports Ltd.","Reef Shipping Co."], lawyers:["Hussain Riza","Ali Hassan","Sara Moosa"], notes:"", status:"Confirmed" },
+  { id:4, caseId:"HC/2024/003", caseTitle:"In re: Estate of Hassan Ibrahim", courtroom:"Courtroom 3", date:fmt(addDays(today,5)), timeStart:"14:00", timeEnd:"15:00", judges:[JUDGES[3],JUDGES[4],JUDGES[0]], parties:["Hassan Ibrahim Estate"], lawyers:["Aishath Laila"], notes:"", status:"Confirmed" },
+];
+
+const statusMeta = { Active:{bg:"var(--color-background-success)",tc:"var(--color-text-success)"}, Pending:{bg:"var(--color-background-warning)",tc:"var(--color-text-warning)"}, Closed:{bg:"var(--color-background-secondary)",tc:"var(--color-text-secondary)"}, Scheduled:{bg:"var(--color-background-info)",tc:"var(--color-text-info)"}, Completed:{bg:"var(--color-background-success)",tc:"var(--color-text-success)"}, Adjourned:{bg:"var(--color-background-warning)",tc:"var(--color-text-warning)"}, Confirmed:{bg:"var(--color-background-success)",tc:"var(--color-text-success)"}, Cancelled:{bg:"var(--color-background-danger)",tc:"var(--color-text-danger)"}, Approved:{bg:"var(--color-background-success)",tc:"var(--color-text-success)"}, Rejected:{bg:"var(--color-background-danger)",tc:"var(--color-text-danger)"} };
+
+const Pill = ({ label, bg, tc, size=12 }) => {
+  const m = statusMeta[label]||{bg:S.info,tc:S.infoT};
+  return <span style={{background:bg||m.bg,color:tc||m.tc,fontSize:size,fontWeight:500,padding:"3px 10px",borderRadius:99,whiteSpace:"nowrap"}}>{label}</span>;
+};
+
+const Avatar = ({ name="?", size=32, bg=S.accentLight, tc=S.accent }) => {
+  const i = (name||"?").split(" ").filter(Boolean).slice(0,2).map(w=>w[0]).join("").toUpperCase();
+  return <div style={{width:size,height:size,borderRadius:"50%",background:bg,color:tc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*0.34,fontWeight:500,flexShrink:0}}>{i}</div>;
+};
+
+const Card = ({ children, style={}, onClick }) => (
+  <div onClick={onClick} style={{background:S.surface,border:`0.5px solid ${S.border}`,borderRadius:12,padding:"1.25rem",cursor:onClick?"pointer":"default",transition:"border-color 0.15s",...style}}
+    onMouseEnter={e=>onClick&&(e.currentTarget.style.borderColor=S.border2)}
+    onMouseLeave={e=>onClick&&(e.currentTarget.style.borderColor=S.border)}>
+    {children}
+  </div>
+);
+
+const Btn = ({ children, variant="ghost", onClick, disabled, style={} }) => {
+  const v = { primary:{background:S.accent,color:"#fff",border:"none"}, ghost:{background:S.surface2,color:S.text,border:`0.5px solid ${S.border}`}, danger:{background:S.danger,color:S.dangerT,border:"none"} };
+  return <button style={{fontSize:13,fontWeight:500,padding:"7px 16px",borderRadius:8,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.5:1,...v[variant],...style}} onClick={onClick} disabled={disabled}>{children}</button>;
+};
+
+const Input = ({ label, ...p }) => (
+  <div style={{marginBottom:12}}>
+    {label&&<label style={{display:"block",fontSize:11,color:S.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label>}
+    <input {...p} style={{width:"100%",boxSizing:"border-box",padding:"8px 12px",borderRadius:8,border:`0.5px solid ${S.border2}`,background:S.surface2,color:S.text,fontSize:14,outline:"none"}} />
+  </div>
+);
+
+const Sel = ({ label, options, ...p }) => (
+  <div style={{marginBottom:12}}>
+    {label&&<label style={{display:"block",fontSize:11,color:S.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label>}
+    <select {...p} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:`0.5px solid ${S.border2}`,background:S.surface2,color:S.text,fontSize:14}}>
+      {options.map(o=><option key={o.value??o} value={o.value??o}>{o.label??o}</option>)}
+    </select>
+  </div>
+);
+
+const Textarea = ({ label, ...p }) => (
+  <div style={{marginBottom:12}}>
+    {label&&<label style={{display:"block",fontSize:11,color:S.muted,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.06em"}}>{label}</label>}
+    <textarea {...p} style={{width:"100%",boxSizing:"border-box",padding:"8px 12px",borderRadius:8,border:`0.5px solid ${S.border2}`,background:S.surface2,color:S.text,fontSize:14,resize:"vertical",outline:"none"}} />
+  </div>
+);
+
+function Modal({ title, subtitle, onClose, children, width=580 }) {
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(10,15,30,0.55)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{background:S.surface,borderRadius:16,border:`0.5px solid ${S.border2}`,width:"100%",maxWidth:width,maxHeight:"92vh",overflowY:"auto"}}>
+        <div style={{padding:"1.25rem 1.5rem",borderBottom:`0.5px solid ${S.border}`,display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+          <div><div style={{fontSize:16,fontWeight:500}}>{title}</div>{subtitle&&<div style={{fontSize:12,color:S.muted,marginTop:2}}>{subtitle}</div>}</div>
+          <button onClick={onClose} style={{background:S.surface2,border:"none",width:28,height:28,borderRadius:6,cursor:"pointer",color:S.muted,fontSize:16,marginLeft:12}}>×</button>
+        </div>
+        <div style={{padding:"1.25rem 1.5rem"}}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function timeToMins(t){ const [h,m]=t.split(":").map(Number); return h*60+m; }
+function timesOverlap(s1,e1,s2,e2){ return timeToMins(s1)<timeToMins(e2)&&timeToMins(e1)>timeToMins(s2); }
+
+function detectClashes(bookings, newB, excludeId=null) {
+  const clashes = [];
+  const others = bookings.filter(b=>b.id!==excludeId&&b.date===newB.date&&b.status!=="Cancelled");
+  for (const b of others) {
+    if (!timesOverlap(newB.timeStart,newB.timeEnd,b.timeStart,b.timeEnd)) continue;
+    if (b.courtroom===newB.courtroom) clashes.push({ type:"courtroom", msg:`${b.courtroom} already booked for "${b.caseTitle}" (${b.timeStart}–${b.timeEnd})` });
+    const jC = newB.judges.filter(j=>b.judges.includes(j));
+    if (jC.length) clashes.push({ type:"judge", msg:`${jC.map(j=>j.replace("Hon. ","")).join(", ")} already scheduled in "${b.caseTitle}"` });
+    const lC = newB.lawyers.filter(l=>b.lawyers.includes(l));
+    if (lC.length) clashes.push({ type:"lawyer", msg:`${lC.join(", ")} already scheduled in "${b.caseTitle}"` });
+    const pC = newB.parties.filter(p=>b.parties.includes(p));
+    if (pC.length) clashes.push({ type:"party", msg:`"${pC.join(", ")}" already in "${b.caseTitle}"` });
+  }
+  return clashes;
+}
+
+const NAV = [
+  {id:"dashboard",icon:"▦",label:"Dashboard"},
+  {id:"cases",icon:"◈",label:"Cases"},
+  {id:"courtrooms",icon:"◻",label:"Courtrooms"},
+  {id:"targets",icon:"◎",label:"Targets"},
+  {id:"tasks",icon:"✓",label:"Tasks"},
+  {id:"requests",icon:"↑",label:"Requests"},
+];
+
+export default function App() {
+  const [page, setPage] = useState("dashboard");
+  const [cases, setCases] = useState(initCases);
+  const [targets, setTargets] = useState(initTargets);
+  const [bookings, setBookings] = useState(initBookings);
+  const [viewCase, setViewCase] = useState(null);
+  const [modal, setModal] = useState(null);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiMsgs, setAiMsgs] = useState([{role:"assistant",content:"Hello. I'm your AI Case Advisor.\n\nI can help with case prioritization, target strategies, and courtroom scheduling. What do you need?"}]);
+  const [aiInput, setAiInput] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const aiRef = useRef(null);
+  useEffect(()=>{if(aiRef.current)aiRef.current.scrollTop=aiRef.current.scrollHeight;},[aiMsgs]);
+
+  const pendingReqs = cases.flatMap(c=>(c.requests||[]).filter(r=>r.status==="Pending").map(r=>({...r,caseId:c.id,caseTitle:c.title})));
+  const pendingTasks = cases.flatMap(c=>c.tasks.filter(t=>!t.done));
+  const goCase = (c) => { setViewCase(c); setPage("cases"); };
+  const updateCase = (id,fn) => { setCases(p=>p.map(c=>c.id===id?fn(c):c)); if(viewCase?.id===id)setViewCase(p=>fn(p)); };
+
+  const sendAI = async () => {
+    if(!aiInput.trim()||aiLoading) return;
+    const userMsg = {role:"user",content:aiInput};
+    const msgs = [...aiMsgs, userMsg];
+    setAiMsgs(msgs); setAiInput(""); setAiLoading(true);
+    const cSum = cases.map(c=>`${c.id}: "${c.title}" (${c.type}, ${c.status})`).join("\n");
+    const tSum = targets.map(t=>`"${t.description}" ${t.current}/${t.metric}`).join("\n");
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:`You are an AI Case Advisor for a High Court. Be concise.\nCASES:\n${cSum}\nTARGETS:\n${tSum}`,messages:msgs.map(m=>({role:m.role,content:m.content}))})});
+      const data = await res.json();
+      setAiMsgs(p=>[...p,{role:"assistant",content:data.content?.find(b=>b.type==="text")?.text||"Unable to respond."}]);
+    } catch { setAiMsgs(p=>[...p,{role:"assistant",content:"Connection error."}]); }
+    setAiLoading(false);
+  };
+
+  return (
+    <div style={{display:"flex",height:"100vh",overflow:"hidden",fontFamily:"var(--font-sans)",fontSize:14}}>
+      <aside style={{width:220,background:S.accent,display:"flex",flexDirection:"column",flexShrink:0}}>
+        <div style={{padding:"1.5rem 1.25rem 1rem"}}>
+          <div style={{fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.4)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:4}}>Republic of Maldives</div>
+          <div style={{fontSize:15,fontWeight:500,color:"#fff"}}>High Court</div>
+          <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginTop:1}}>Case Management System</div>
+        </div>
+        <div style={{height:"0.5px",background:"rgba(255,255,255,0.08)",margin:"0 1.25rem"}} />
+        <nav style={{flex:1,padding:"0.75rem 0.75rem"}}>
+          {NAV.map(n=>{
+            const count = n.id==="requests"?pendingReqs.length:n.id==="tasks"?pendingTasks.length:0;
+            const active = page===n.id;
+            return (
+              <button key={n.id} onClick={()=>{setPage(n.id);setViewCase(null);}} style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 12px",background:active?"rgba(255,255,255,0.1)":"none",border:"none",borderRadius:8,color:active?"#fff":"rgba(255,255,255,0.5)",fontSize:13,cursor:"pointer",marginBottom:2,textAlign:"left",fontWeight:active?500:400}}>
+                <span style={{fontSize:14,width:16,textAlign:"center"}}>{n.icon}</span>
+                <span style={{flex:1}}>{n.label}</span>
+                {count>0&&<span style={{background:n.id==="requests"?"#c0392b":"rgba(255,255,255,0.15)",color:"#fff",fontSize:10,fontWeight:500,padding:"1px 6px",borderRadius:99}}>{count}</span>}
+              </button>
+            );
+          })}
+        </nav>
+        <div style={{padding:"1rem 0.75rem"}}>
+          <button onClick={()=>setAiOpen(o=>!o)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",padding:"10px 12px",background:aiOpen?"rgba(184,147,58,0.2)":"transparent",border:`0.5px solid rgba(184,147,58,${aiOpen?0.5:0.25})`,borderRadius:8,color:S.gold,fontSize:13,cursor:"pointer",fontWeight:500}}>
+            <span style={{fontSize:14}}>✦</span> AI Advisor
+          </button>
+        </div>
+      </aside>
+
+      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        <header style={{padding:"0 1.5rem",height:52,borderBottom:`0.5px solid ${S.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",background:S.surface,flexShrink:0}}>
+          <div style={{fontSize:13,color:S.muted}}>{NAV.find(n=>n.id===page)?.label}{viewCase?` / ${viewCase.id}`:""}</div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            {page==="cases"&&!viewCase&&<Btn variant="primary" onClick={()=>setModal("newCase")}>+ New case</Btn>}
+            {page==="courtrooms"&&<Btn variant="primary" onClick={()=>setModal("newBooking")}>+ Book courtroom</Btn>}
+            {page==="targets"&&<Btn variant="primary" onClick={()=>setModal("newTarget")}>+ New target</Btn>}
+            <Avatar name="Admin User" size={30} />
+          </div>
+        </header>
+        <div style={{flex:1,overflowY:"auto",padding:"1.5rem"}}>
+          {page==="dashboard"&&<DashPage cases={cases} targets={targets} bookings={bookings} pendingReqs={pendingReqs} pendingTasks={pendingTasks} goCase={goCase} setPage={setPage} />}
+          {page==="cases"&&<CasesPage cases={cases} viewCase={viewCase} setViewCase={setViewCase} updateCase={updateCase} setModal={setModal} />}
+          {page==="courtrooms"&&<CourtroomsPage bookings={bookings} setBookings={setBookings} cases={cases} setModal={setModal} />}
+          {page==="targets"&&<TargetsPage targets={targets} setTargets={setTargets} />}
+          {page==="tasks"&&<TasksPage cases={cases} updateCase={updateCase} setModal={setModal} />}
+          {page==="requests"&&<RequestsPage cases={cases} updateCase={updateCase} />}
+        </div>
+      </div>
+
+      {aiOpen&&(
+        <div style={{width:340,background:S.surface,borderLeft:`0.5px solid ${S.border}`,display:"flex",flexDirection:"column",flexShrink:0}}>
+          <div style={{padding:"1rem 1.25rem",borderBottom:`0.5px solid ${S.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div><div style={{fontSize:14,fontWeight:500}}>AI Case Advisor</div><div style={{fontSize:11,color:S.muted}}>Powered by Claude</div></div>
+            <button onClick={()=>setAiOpen(false)} style={{background:S.surface2,border:"none",width:26,height:26,borderRadius:6,cursor:"pointer",color:S.muted,fontSize:15}}>×</button>
+          </div>
+          <div ref={aiRef} style={{flex:1,overflowY:"auto",padding:"1rem",display:"flex",flexDirection:"column",gap:10}}>
+            {aiMsgs.map((m,i)=>(
+              <div key={i} style={{alignSelf:m.role==="user"?"flex-end":"flex-start",maxWidth:"88%",background:m.role==="user"?S.accent:S.surface2,color:m.role==="user"?"#fff":S.text,padding:"10px 13px",borderRadius:m.role==="user"?"12px 12px 3px 12px":"12px 12px 12px 3px",fontSize:13,lineHeight:1.55,whiteSpace:"pre-wrap"}}>{m.content}</div>
+            ))}
+            {aiLoading&&<div style={{alignSelf:"flex-start",background:S.surface2,padding:"10px 13px",borderRadius:"12px 12px 12px 3px",fontSize:13,color:S.muted}}>Thinking...</div>}
+          </div>
+          <div style={{padding:"0.75rem 1rem",borderTop:`0.5px solid ${S.border}`,display:"flex",gap:8}}>
+            <input value={aiInput} onChange={e=>setAiInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&sendAI()} placeholder="Ask the advisor..." style={{flex:1,padding:"8px 12px",borderRadius:8,border:`0.5px solid ${S.border2}`,background:S.surface2,color:S.text,fontSize:13,outline:"none"}} />
+            <button onClick={sendAI} disabled={aiLoading} style={{padding:"8px 14px",background:S.accent,color:"#fff",border:"none",borderRadius:8,cursor:"pointer",fontSize:13,fontWeight:500}}>↑</button>
+          </div>
+        </div>
+      )}
+
+      {modal==="newCase"&&<NewCaseModal cases={cases} setCases={setCases} onClose={()=>setModal(null)} />}
+      {modal==="newTarget"&&<NewTargetModal targets={targets} setTargets={setTargets} onClose={()=>setModal(null)} />}
+      {modal==="newBooking"&&<BookingModal bookings={bookings} setBookings={setBookings} cases={cases} onClose={()=>setModal(null)} />}
+      {modal?.type==="editBooking"&&<BookingModal bookings={bookings} setBookings={setBookings} cases={cases} existing={modal.booking} onClose={()=>setModal(null)} />}
+      {modal?.type==="newTask"&&<NewTaskModal caseData={modal.caseData} updateCase={updateCase} onClose={()=>setModal(null)} existing={modal.existing} />}
+      {modal?.type==="newRequest"&&<NewRequestModal caseData={modal.caseData} updateCase={updateCase} onClose={()=>setModal(null)} />}
+    </div>
+  );
+}
+
+// ─── Dashboard ───────────────────────────────────────────────────────────────
+function DashPage({ cases, targets, bookings, pendingReqs, pendingTasks, goCase, setPage }) {
+  const active = cases.filter(c=>c.status==="Active").length;
+  const pending = cases.filter(c=>c.status==="Pending").length;
+  const closed = cases.filter(c=>c.status==="Closed").length;
+  const todayStr = fmt(today);
+  const [schedWeekStart, setSchedWeekStart] = useState(()=>{ const d=new Date(today); d.setDate(d.getDate()-d.getDay()); return d; });
+  const schedWeekDates = Array.from({length:7},(_,i)=>fmt(addDays(schedWeekStart,i)));
+  const [schedDate, setSchedDate] = useState(todayStr);
+  const dayBookings = bookings.filter(b=>b.date===schedDate&&b.status!=="Cancelled").sort((a,b)=>a.timeStart.localeCompare(b.timeStart));
+  const allTasks = cases.flatMap(c=>c.tasks);
+  const courtColors = ["#1a2744","#0f6e56","#854f0b"];
+  const courtBgs = [S.accentLight,"#e1f5ee","#faeeda"];
+  const SCHED_SLOTS = ["09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00"];
+
+  return (
+    <div style={{display:"grid",gridTemplateColumns:"1fr 320px",gap:"1.25rem",alignItems:"start"}}>
+      <div>
+        <div style={{marginBottom:"1.5rem"}}>
+          <div style={{fontSize:22,fontWeight:500,marginBottom:2}}>Welcome back!</div>
+          <div style={{fontSize:13,color:S.muted}}>Here is what is happening in the High Court today.</div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:"1.5rem"}}>
+          {[[active,"Active cases","◈"],[pending,"Pending cases","◷"],[closed,"Closed cases","✓"]].map(([v,l,ic])=>(
+            <div key={l} style={{background:S.surface,border:`0.5px solid ${S.border}`,borderRadius:14,padding:"1.25rem"}}>
+              <div style={{width:40,height:40,borderRadius:10,background:S.accentLight,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,color:S.accent,marginBottom:12}}>{ic}</div>
+              <div style={{fontSize:28,fontWeight:500,lineHeight:1,marginBottom:4}}>{v}</div>
+              <div style={{fontSize:12,color:S.muted}}>{l}</div>
+            </div>
+          ))}
+        </div>
+        <Card style={{marginBottom:"1.25rem",padding:"1.25rem"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem"}}>
+            <div><div style={{fontSize:14,fontWeight:500}}>Case list</div><div style={{fontSize:11,color:S.muted}}>{pendingTasks.length} open tasks</div></div>
+            <button onClick={()=>setPage("cases")} style={{fontSize:12,color:S.accent,background:S.accentLight,border:"none",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontWeight:500}}>View all</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1.5fr 1fr 1fr",marginBottom:6}}>
+            {["Case","Presiding judge","Status","Tasks"].map(h=><div key={h} style={{fontSize:11,color:S.muted,padding:"4px 8px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{h}</div>)}
+          </div>
+          {cases.slice(0,5).map(c=>{
+            const done=c.tasks.filter(t=>t.done).length;
+            const pct=c.tasks.length?Math.round(done/c.tasks.length*100):0;
+            return (
+              <div key={c.id} onClick={()=>goCase(c)} style={{display:"grid",gridTemplateColumns:"2fr 1.5fr 1fr 1fr",borderTop:`0.5px solid ${S.border}`,cursor:"pointer",borderRadius:8,transition:"background 0.1s"}}
+                onMouseEnter={e=>e.currentTarget.style.background=S.surface2}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <div style={{padding:"10px 8px"}}><div style={{fontSize:13,fontWeight:500,marginBottom:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.title}</div><div style={{fontSize:11,color:S.muted}}>{c.id}</div></div>
+                <div style={{padding:"10px 8px",display:"flex",alignItems:"center",gap:6}}><Avatar name={c.presiding} size={24}/><span style={{fontSize:12,color:S.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.presiding.replace("Hon. ","")}</span></div>
+                <div style={{padding:"10px 8px",display:"flex",alignItems:"center"}}><Pill label={c.status} size={11}/></div>
+                <div style={{padding:"10px 8px",display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{flex:1}}><div style={{height:4,background:S.surface2,borderRadius:99,marginBottom:3}}><div style={{height:4,width:`${pct}%`,background:pct===100?"#27500a":S.accent,borderRadius:99}}/></div><div style={{fontSize:10,color:S.muted}}>{done}/{c.tasks.length}</div></div>
+                </div>
+              </div>
+            );
+          })}
+        </Card>
+        <Card style={{padding:"1.25rem"}}>
+          <div style={{fontSize:14,fontWeight:500,marginBottom:"1rem"}}>Target progress</div>
+          {targets.map(t=>{
+            const pct=Math.min(100,Math.round(t.current/t.metric*100));
+            const barC=pct>=80?"#27500a":pct>=50?"#633806":"#A32D2D";
+            return (
+              <div key={t.id} style={{display:"grid",gridTemplateColumns:"1fr auto",gap:12,alignItems:"center",padding:"8px 0",borderTop:`0.5px solid ${S.border}`}}>
+                <div><div style={{fontSize:13,fontWeight:500,marginBottom:2}}>{t.description}</div><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{flex:1,height:5,background:S.surface2,borderRadius:99}}><div style={{height:5,width:`${pct}%`,background:barC,borderRadius:99}}/></div><span style={{fontSize:11,color:S.muted,flexShrink:0}}>{t.current}/{t.metric}</span></div></div>
+                <div style={{textAlign:"right"}}><div style={{fontSize:18,fontWeight:500,color:barC}}>{pct}%</div><div style={{fontSize:10,color:S.muted}}>by {t.deadline}</div></div>
+              </div>
+            );
+          })}
+        </Card>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:"1rem"}}>
+        <Card style={{padding:"1.25rem"}}>
+          <div style={{fontSize:14,fontWeight:500,marginBottom:2}}>Hearing schedule</div>
+          <div style={{fontSize:11,color:S.muted,marginBottom:"1rem"}}>{dayBookings.length} hearing{dayBookings.length!==1?"s":""} on this day</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:"1rem"}}>
+            {schedWeekDates.map(d=>{
+              const dt=new Date(d+"T00:00:00");
+              const isToday=d===todayStr; const isSel=d===schedDate;
+              const hasBk=bookings.some(b=>b.date===d&&b.status!=="Cancelled");
+              return (
+                <button key={d} onClick={()=>setSchedDate(d)} style={{padding:"7px 4px",borderRadius:9,border:"none",background:isSel?S.accent:isToday?S.accentLight:"none",color:isSel?"#fff":isToday?S.accent:S.text,cursor:"pointer",textAlign:"center",position:"relative"}}>
+                  <div style={{fontSize:9,textTransform:"uppercase",opacity:0.7,marginBottom:2}}>{weekDays[dt.getDay()]}</div>
+                  <div style={{fontSize:14,fontWeight:isSel||isToday?500:400}}>{dt.getDate()}</div>
+                  {hasBk&&!isSel&&<div style={{width:4,height:4,borderRadius:"50%",background:isSel?"#fff":S.accent,margin:"2px auto 0",opacity:0.5}}/>}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:"0.75rem"}}>
+            <button onClick={()=>setSchedWeekStart(p=>addDays(p,-7))} style={{fontSize:11,background:"none",border:`0.5px solid ${S.border}`,borderRadius:5,padding:"2px 8px",cursor:"pointer",color:S.muted}}>‹ Prev</button>
+            <button onClick={()=>setSchedWeekStart(p=>addDays(p,7))} style={{fontSize:11,background:"none",border:`0.5px solid ${S.border}`,borderRadius:5,padding:"2px 8px",cursor:"pointer",color:S.muted}}>Next ›</button>
+          </div>
+          <div style={{maxHeight:380,overflowY:"auto",paddingRight:2}}>
+            {SCHED_SLOTS.map(slot=>{
+              const bk=dayBookings.find(b=>b.timeStart===slot||(timeToMins(slot)>timeToMins(b.timeStart)&&timeToMins(slot)<timeToMins(b.timeEnd)));
+              const isStart=bk&&bk.timeStart===slot;
+              const ci=bk?COURTS.indexOf(bk.courtroom):0;
+              return (
+                <div key={slot} style={{display:"flex",gap:10,marginBottom:6,alignItems:"flex-start"}}>
+                  <div style={{fontSize:10,color:S.hint,width:44,flexShrink:0,paddingTop:10,textAlign:"right"}}>{slot}</div>
+                  {bk&&isStart?(
+                    <div style={{flex:1,background:courtBgs[ci>=0?ci:0],borderLeft:`3px solid ${courtColors[ci>=0?ci:0]}`,borderRadius:"0 10px 10px 0",padding:"8px 12px",cursor:"pointer"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}><Avatar name={bk.judges[0]} size={22} bg={courtBgs[ci>=0?ci:0]} tc={courtColors[ci>=0?ci:0]}/><div style={{fontSize:12,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{bk.caseTitle}</div></div>
+                      <div style={{fontSize:10,color:S.muted}}>{bk.courtroom} · {bk.timeStart}–{bk.timeEnd}</div>
+                    </div>
+                  ):(
+                    <div style={{flex:1,height:36,borderRadius:8,background:bk?"transparent":S.surface2,opacity:bk?0:0.4}}/>
+                  )}
+                </div>
+              );
+            })}
+            {dayBookings.length===0&&<div style={{fontSize:12,color:S.muted,textAlign:"center",padding:"1.5rem 0"}}>No hearings scheduled.</div>}
+          </div>
+        </Card>
+        {pendingReqs.length>0&&(
+          <Card style={{padding:"1.25rem"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem"}}>
+              <div style={{fontSize:14,fontWeight:500}}>Pending requests</div>
+              <button onClick={()=>setPage("requests")} style={{fontSize:11,color:S.accent,background:S.accentLight,border:"none",borderRadius:6,padding:"4px 10px",cursor:"pointer"}}>View all</button>
+            </div>
+            {pendingReqs.slice(0,3).map(r=>(
+              <div key={r.id} style={{display:"flex",gap:10,padding:"7px 0",borderTop:`0.5px solid ${S.border}`,alignItems:"center"}}>
+                <div style={{width:8,height:8,borderRadius:"50%",background:r.type==="Expedite"?S.dangerT:S.warnT,flexShrink:0}}/>
+                <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.caseTitle}</div><div style={{fontSize:11,color:S.muted}}>{r.type} · {r.filedBy}</div></div>
+                <Pill label={r.type} bg={r.type==="Expedite"?S.danger:S.warn} tc={r.type==="Expedite"?S.dangerT:S.warnT} size={10}/>
+              </div>
+            ))}
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Cases ────────────────────────────────────────────────────────────────────
+function CasesPage({ cases, viewCase, setViewCase, updateCase, setModal }) {
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("All");
+  const [activeTab, setActiveTab] = useState("tasks");
+  const cs = viewCase ? cases.find(c=>c.id===viewCase.id) : null;
+
+  if (cs) {
+    const done = cs.tasks.filter(t=>t.done).length;
+    const allLawyers = [...cs.petitioner.lawyers,...(cs.respondent?.lawyers||[])];
+    const tabs = [{id:"tasks",label:`Tasks (${cs.tasks.length})`},{id:"hearings",label:`Hearings (${cs.hearings?.length||0})`},{id:"requests",label:`Requests (${(cs.requests||[]).length})`},{id:"bench",label:`Bench (${cs.judges.length})`}];
+    return (
+      <div>
+        <button onClick={()=>setViewCase(null)} style={{fontSize:12,color:S.muted,background:"none",border:"none",cursor:"pointer",padding:0,marginBottom:"1rem"}}>← Cases</button>
+        <Card style={{marginBottom:"1rem",padding:"1.5rem"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"1.25rem"}}>
+            <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
+              <div style={{width:54,height:54,borderRadius:12,background:S.accentLight,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,color:S.accent,fontWeight:500,flexShrink:0}}>{cs.title.split(" ").map(w=>w[0]).slice(0,2).join("").toUpperCase()}</div>
+              <div>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}><div style={{fontSize:20,fontWeight:500}}>{cs.title}</div><Pill label={cs.status} size={12}/><Pill label={cs.type} bg={S.accentLight} tc={S.accent} size={12}/></div>
+                <div style={{display:"flex",gap:20,fontSize:12,color:S.muted}}>
+                  <span>Case no: <span style={{color:S.text,fontWeight:500}}>{cs.id}</span></span>
+                  <span>Filed: <span style={{color:S.text}}>{cs.filed}</span></span>
+                  <span>Petitioner: <span style={{color:S.text}}>{cs.petitioner.name}</span></span>
+                  {cs.respondent&&<span>Respondent: <span style={{color:S.text}}>{cs.respondent.name}</span></span>}
+                </div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
+              <div style={{textAlign:"right",marginRight:8}}><div style={{fontSize:11,color:S.muted}}>Presiding judge</div><div style={{display:"flex",alignItems:"center",gap:6,marginTop:3}}><Avatar name={cs.presiding} size={26}/><span style={{fontSize:12,fontWeight:500}}>{cs.presiding.replace("Hon. ","")}</span></div></div>
+              <Btn variant="ghost" style={{fontSize:12,padding:"6px 12px"}} onClick={()=>setModal({type:"newRequest",caseData:cs})}>File request</Btn>
+              <Btn variant="primary" style={{fontSize:12,padding:"6px 12px"}} onClick={()=>setModal({type:"newTask",caseData:cs})}>+ Task</Btn>
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12}}>
+            {[{label:"Open tasks",value:cs.tasks.filter(t=>!t.done).length,sub:`${done} completed`},{label:"Judges on bench",value:cs.judges.length,sub:`${cs.judges.length>=5?"Full":"Standard"} bench`},{label:"Counsel",value:allLawyers.length,sub:`${cs.petitioner.lawyers.length} pet. · ${cs.respondent?.lawyers?.length||0} res.`},{label:"Requests",value:(cs.requests||[]).length,sub:`${(cs.requests||[]).filter(r=>r.status==="Pending").length} pending`}].map(({label,value,sub})=>(
+              <div key={label} style={{background:S.surface2,borderRadius:10,padding:"12px 14px"}}><div style={{fontSize:11,color:S.muted,marginBottom:4}}>{label}</div><div style={{fontSize:22,fontWeight:500,lineHeight:1,marginBottom:3}}>{value}</div><div style={{fontSize:11,color:S.hint}}>{sub}</div></div>
+            ))}
+          </div>
+        </Card>
+        <div style={{display:"flex",gap:0,marginBottom:"1rem",borderBottom:`0.5px solid ${S.border}`}}>
+          {tabs.map(t=>(
+            <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{padding:"9px 18px",border:"none",background:"none",fontSize:13,cursor:"pointer",color:activeTab===t.id?S.accent:S.muted,fontWeight:activeTab===t.id?500:400,borderBottom:activeTab===t.id?`2px solid ${S.accent}`:"2px solid transparent",marginBottom:"-0.5px"}}>{t.label}</button>
+          ))}
+        </div>
+        {activeTab==="tasks"&&(
+          <Card style={{padding:0,overflow:"hidden"}}>
+            <div style={{display:"grid",gridTemplateColumns:"2fr 1.2fr 1fr 1fr 80px 60px",background:S.surface2,borderBottom:`0.5px solid ${S.border}`}}>
+              {["Task","Assigned to","Priority","Due date","Status",""].map(h=><div key={h} style={{padding:"9px 14px",fontSize:11,color:S.muted,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</div>)}
+            </div>
+            {cs.tasks.length===0?<div style={{padding:"2rem",textAlign:"center",color:S.muted,fontSize:13}}>No tasks yet.</div>:cs.tasks.map((t,i)=>(
+              <div key={t.id} style={{display:"grid",gridTemplateColumns:"2fr 1.2fr 1fr 1fr 80px 60px",borderTop:i>0?`0.5px solid ${S.border}`:"none",transition:"background 0.1s"}} onMouseEnter={e=>e.currentTarget.style.background=S.surface2} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                <div style={{padding:"12px 14px",display:"flex",alignItems:"center",gap:10}}><input type="checkbox" checked={t.done} onChange={()=>updateCase(cs.id,c=>({...c,tasks:c.tasks.map(tk=>tk.id===t.id?{...tk,done:!tk.done}:tk)}))} style={{cursor:"pointer",width:14,height:14,flexShrink:0}}/><div><div style={{fontSize:13,textDecoration:t.done?"line-through":"none",color:t.done?S.muted:S.text}}>{t.text}</div>{t.notes&&<div style={{fontSize:11,color:S.hint,marginTop:1}}>{t.notes}</div>}</div></div>
+                <div style={{padding:"12px 14px",display:"flex",alignItems:"center"}}>{t.assignee?<div style={{display:"flex",alignItems:"center",gap:7}}><Avatar name={t.assignee} size={26}/><div><div style={{fontSize:12,fontWeight:500}}>{t.assignee.replace("Hon. ","")}</div><div style={{fontSize:10,color:S.muted}}>{JUDGES.includes(t.assignee)?"Judge":LAWYERS.includes(t.assignee)?"Lawyer":"Staff"}</div></div></div>:<span style={{fontSize:12,color:S.hint}}>Unassigned</span>}</div>
+                <div style={{padding:"12px 14px",display:"flex",alignItems:"center"}}><Pill label={t.priority||"Medium"} bg={t.priority==="High"?S.danger:t.priority==="Medium"?S.warn:S.success} tc={t.priority==="High"?S.dangerT:t.priority==="Medium"?S.warnT:S.successT} size={11}/></div>
+                <div style={{padding:"12px 14px",display:"flex",alignItems:"center",fontSize:12,color:t.due?S.text:S.hint}}>{t.due||"No date"}</div>
+                <div style={{padding:"12px 14px",display:"flex",alignItems:"center"}}><Pill label={t.done?"Done":"Open"} bg={t.done?S.success:S.surface2} tc={t.done?S.successT:S.muted} size={11}/></div>
+                <div style={{padding:"12px 10px",display:"flex",alignItems:"center",justifyContent:"center"}}><button onClick={()=>setModal({type:"newTask",caseData:cs,existing:t})} style={{width:28,height:28,border:`0.5px solid ${S.border}`,borderRadius:6,background:S.surface,cursor:"pointer",color:S.muted,fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>✎</button></div>
+              </div>
+            ))}
+          </Card>
+        )}
+        {activeTab==="bench"&&(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:12}}>
+            {cs.judges.map(j=>(
+              <Card key={j} style={{padding:"1.1rem 1.25rem"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><Avatar name={j} size={40}/><div><div style={{fontSize:13,fontWeight:500}}>{j.replace("Hon. ","")}</div><div style={{fontSize:11,color:S.muted}}>High Court Judge</div></div></div>
+                {j===cs.presiding&&<Pill label="Presiding Judge" bg={S.goldLight} tc={S.gold} size={11}/>}
+              </Card>
+            ))}
+            <Card style={{padding:"1.1rem 1.25rem"}}>
+              <div style={{fontSize:11,color:S.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Petitioner counsel</div>
+              {cs.petitioner.lawyers.length===0?<div style={{fontSize:12,color:S.hint}}>No counsel</div>:cs.petitioner.lawyers.map(l=><div key={l} style={{display:"flex",alignItems:"center",gap:8,marginBottom:7}}><Avatar name={l} size={28} bg="#e1f5ee" tc="#0f6e56"/><div><div style={{fontSize:12,fontWeight:500}}>{l}</div><div style={{fontSize:10,color:S.muted}}>Petitioner</div></div></div>)}
+              {cs.respondent&&<><div style={{fontSize:11,color:S.muted,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8,marginTop:12}}>Respondent counsel</div>{cs.respondent.lawyers.length===0?<div style={{fontSize:12,color:S.hint}}>No counsel</div>:cs.respondent.lawyers.map(l=><div key={l} style={{display:"flex",alignItems:"center",gap:8,marginBottom:7}}><Avatar name={l} size={28} bg="#faeeda" tc="#854f0b"/><div><div style={{fontSize:12,fontWeight:500}}>{l}</div><div style={{fontSize:10,color:S.muted}}>Respondent</div></div></div>)}</>}
+            </Card>
+          </div>
+        )}
+        {activeTab==="hearings"&&(
+          <Card style={{padding:0,overflow:"hidden"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",background:S.surface2,borderBottom:`0.5px solid ${S.border}`}}>{["Date","Courtroom","Outcome","Notes"].map(h=><div key={h} style={{padding:"9px 14px",fontSize:11,color:S.muted,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</div>)}</div>
+            {(!cs.hearings||cs.hearings.length===0)?<div style={{padding:"2rem",textAlign:"center",color:S.muted,fontSize:13}}>No hearings yet.</div>:cs.hearings.map((h,i)=>(
+              <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",borderTop:i>0?`0.5px solid ${S.border}`:"none"}}>
+                <div style={{padding:"12px 14px",fontSize:13,fontWeight:500}}>{h.date}</div>
+                <div style={{padding:"12px 14px",fontSize:13,color:S.muted}}>{h.court||h.courtroom}</div>
+                <div style={{padding:"12px 14px"}}><Pill label={h.outcome}/></div>
+                <div style={{padding:"12px 14px",fontSize:12,color:S.muted}}>{h.notes||"—"}</div>
+              </div>
+            ))}
+          </Card>
+        )}
+        {activeTab==="requests"&&(
+          <Card style={{padding:0,overflow:"hidden"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 2fr 1fr 1fr 1fr",background:S.surface2,borderBottom:`0.5px solid ${S.border}`}}>{["Type","Reason","Filed by","Date","Status"].map(h=><div key={h} style={{padding:"9px 14px",fontSize:11,color:S.muted,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</div>)}</div>
+            {(cs.requests||[]).length===0?<div style={{padding:"2rem",textAlign:"center",color:S.muted,fontSize:13}}>No requests filed.</div>:(cs.requests||[]).map((r,i)=>(
+              <div key={r.id} style={{display:"grid",gridTemplateColumns:"1fr 2fr 1fr 1fr 1fr",borderTop:i>0?`0.5px solid ${S.border}`:"none"}}>
+                <div style={{padding:"12px 14px"}}><Pill label={r.type} bg={r.type==="Expedite"?S.danger:S.warn} tc={r.type==="Expedite"?S.dangerT:S.warnT} size={11}/></div>
+                <div style={{padding:"12px 14px",fontSize:12}}>{r.reason?.slice(0,60)}{r.reason?.length>60?"...":""}</div>
+                <div style={{padding:"12px 14px",fontSize:12,color:S.muted}}>{r.filedBy}</div>
+                <div style={{padding:"12px 14px",fontSize:12,color:S.muted}}>{r.submittedAt}</div>
+                <div style={{padding:"12px 14px"}}><Pill label={r.status}/></div>
+              </div>
+            ))}
+          </Card>
+        )}
+      </div>
+    );
+  }
+
+  const filtered = cases.filter(c=>(filter==="All"||c.status===filter)&&(c.id.toLowerCase().includes(search.toLowerCase())||c.title.toLowerCase().includes(search.toLowerCase())));
+  return (
+    <div>
+      <div style={{marginBottom:"1.25rem"}}><div style={{fontSize:20,fontWeight:500,marginBottom:2}}>Cases</div><div style={{fontSize:13,color:S.muted}}>{cases.length} total · {cases.filter(c=>c.status==="Active").length} active</div></div>
+      <Card style={{marginBottom:"1rem",padding:"1.25rem 1.5rem"}}>
+        <div style={{display:"flex",gap:10,alignItems:"center"}}>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by case ID or title..." style={{flex:1,padding:"8px 12px",borderRadius:8,border:`0.5px solid ${S.border2}`,background:S.surface2,color:S.text,fontSize:13,outline:"none"}}/>
+          <div style={{display:"flex",border:`0.5px solid ${S.border}`,borderRadius:8,overflow:"hidden"}}>
+            {["All","Active","Pending","Closed"].map(s=><button key={s} onClick={()=>setFilter(s)} style={{padding:"8px 14px",border:"none",background:filter===s?S.accent:"none",color:filter===s?"#fff":S.muted,fontSize:12,cursor:"pointer",fontWeight:filter===s?500:400}}>{s}</button>)}
+          </div>
+        </div>
+      </Card>
+      <Card style={{padding:0,overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"2.5fr 1.5fr 100px 100px 100px 80px",background:S.surface2,borderBottom:`0.5px solid ${S.border}`}}>
+          {["Case","Presiding judge","Type","Status","Filed","Action"].map(h=><div key={h} style={{padding:"10px 14px",fontSize:11,color:S.muted,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</div>)}
+        </div>
+        {filtered.length===0&&<div style={{padding:"2rem",textAlign:"center",color:S.muted,fontSize:13}}>No cases found.</div>}
+        {filtered.map((c,i)=>(
+          <div key={c.id} style={{display:"grid",gridTemplateColumns:"2.5fr 1.5fr 100px 100px 100px 80px",borderTop:i>0?`0.5px solid ${S.border}`:"none",transition:"background 0.1s",cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.background=S.surface2} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+            <div style={{padding:"13px 14px",display:"flex",alignItems:"center",gap:10}}><Avatar name={c.title} size={34}/><div><div style={{fontSize:13,fontWeight:500,marginBottom:1}}>{c.title}</div><div style={{fontSize:11,color:S.muted}}>{c.id}</div></div></div>
+            <div style={{padding:"13px 14px",display:"flex",alignItems:"center",gap:8}}><Avatar name={c.presiding} size={26}/><div><div style={{fontSize:12,fontWeight:500}}>{c.presiding.replace("Hon. ","")}</div><div style={{fontSize:10,color:S.muted}}>Presiding</div></div></div>
+            <div style={{padding:"13px 14px",display:"flex",alignItems:"center"}}><Pill label={c.type} bg={S.accentLight} tc={S.accent} size={11}/></div>
+            <div style={{padding:"13px 14px",display:"flex",alignItems:"center"}}><Pill label={c.status} size={11}/></div>
+            <div style={{padding:"13px 14px",display:"flex",alignItems:"center",fontSize:12,color:S.muted}}>{c.filed}</div>
+            <div style={{padding:"13px 10px",display:"flex",alignItems:"center",justifyContent:"center"}}><button onClick={()=>setViewCase(c)} style={{padding:"5px 12px",background:S.accentLight,color:S.accent,border:`0.5px solid ${S.accentLight}`,borderRadius:6,cursor:"pointer",fontSize:12,fontWeight:500}}>View</button></div>
+          </div>
+        ))}
+      </Card>
+    </div>
+  );
+}
+
+// ─── Courtrooms ───────────────────────────────────────────────────────────────
+function CourtroomsPage({ bookings, setBookings, cases, setModal }) {
+  const [selDate, setSelDate] = useState(fmt(today));
+  const [weekStart, setWeekStart] = useState(()=>{ const d=new Date(today); d.setDate(d.getDate()-d.getDay()); return d; });
+  const [viewBooking, setViewBooking] = useState(null);
+  const weekDates = Array.from({length:7},(_,i)=>fmt(addDays(weekStart,i)));
+  const cancelBooking = (id) => { setBookings(p=>p.map(b=>b.id===id?{...b,status:"Cancelled"}:b)); setViewBooking(null); };
+  const getCell = (date,court,slot) => bookings.find(b=>b.date===date&&b.courtroom===court&&b.status!=="Cancelled"&&timeToMins(slot)>=timeToMins(b.timeStart)&&timeToMins(slot)<timeToMins(b.timeEnd))||null;
+  const isSlotStart = (date,court,slot) => bookings.find(b=>b.date===date&&b.courtroom===court&&b.status!=="Cancelled"&&b.timeStart===slot)||null;
+
+  if (viewBooking) {
+    const b=viewBooking;
+    return (
+      <div>
+        <button onClick={()=>setViewBooking(null)} style={{fontSize:12,color:S.muted,background:"none",border:"none",cursor:"pointer",padding:0,marginBottom:"1.25rem"}}>← Back to schedule</button>
+        <Card>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"1.25rem"}}>
+            <div><div style={{display:"flex",gap:8,alignItems:"center",marginBottom:4}}><div style={{fontSize:18,fontWeight:500}}>{b.caseTitle}</div><Pill label={b.status}/></div><div style={{fontSize:12,color:S.muted}}>{b.caseId} · {b.date} · {b.timeStart}–{b.timeEnd} · {b.courtroom}</div></div>
+            {b.status==="Confirmed"&&<div style={{display:"flex",gap:8}}><Btn variant="ghost" onClick={()=>{setViewBooking(null);setModal({type:"editBooking",booking:b});}}>Edit</Btn><Btn variant="danger" onClick={()=>cancelBooking(b.id)}>Cancel</Btn></div>}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"1rem"}}>
+            <div><div style={{fontSize:11,color:S.muted,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Bench</div>{b.judges.map(j=><div key={j} style={{display:"flex",alignItems:"center",gap:8,marginBottom:7}}><Avatar name={j} size={28}/><span style={{fontSize:12}}>{j.replace("Hon. ","")}</span></div>)}</div>
+            <div><div style={{fontSize:11,color:S.muted,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Parties</div>{b.parties.map(p=><div key={p} style={{fontSize:12,marginBottom:5,fontWeight:500}}>{p}</div>)}</div>
+            <div><div style={{fontSize:11,color:S.muted,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Counsel</div>{b.lawyers.map(l=><div key={l} style={{fontSize:12,marginBottom:5}}>{l}</div>)}</div>
+          </div>
+          {b.notes&&<div style={{marginTop:"1rem",paddingTop:"1rem",borderTop:`0.5px solid ${S.border}`}}><div style={{fontSize:11,color:S.muted,marginBottom:4}}>NOTES</div><div style={{fontSize:13}}>{b.notes}</div></div>}
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1.25rem"}}>
+        <div style={{fontSize:20,fontWeight:500}}>Courtroom booking</div>
+        <div style={{display:"flex",alignItems:"center",gap:12,fontSize:12,color:S.muted}}>
+          <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:S.success,border:`0.5px solid ${S.successT}`,display:"inline-block"}}/> Available</span>
+          <span style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:S.accentLight,border:`0.5px solid ${S.accentMid}`,display:"inline-block"}}/> Booked</span>
+        </div>
+      </div>
+      <Card style={{marginBottom:"1rem",padding:"1rem 1.25rem"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem"}}>
+          <div style={{fontSize:13,fontWeight:500}}>Select a date</div>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <button onClick={()=>setWeekStart(p=>addDays(p,-7))} style={{width:28,height:28,border:`0.5px solid ${S.border}`,borderRadius:6,background:S.surface2,color:S.text,cursor:"pointer",fontSize:14}}>‹</button>
+            <span style={{fontSize:12,color:S.muted,minWidth:120,textAlign:"center"}}>{monthNames[new Date(weekDates[0]+"T00:00:00").getMonth()]} {new Date(weekDates[0]+"T00:00:00").getFullYear()}</span>
+            <button onClick={()=>setWeekStart(p=>addDays(p,7))} style={{width:28,height:28,border:`0.5px solid ${S.border}`,borderRadius:6,background:S.surface2,color:S.text,cursor:"pointer",fontSize:14}}>›</button>
+            <button onClick={()=>{const d=new Date(today);d.setDate(d.getDate()-d.getDay());setWeekStart(d);setSelDate(fmt(today));}} style={{padding:"4px 10px",border:`0.5px solid ${S.border}`,borderRadius:6,background:S.surface2,color:S.text,cursor:"pointer",fontSize:11}}>Today</button>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6}}>
+          {weekDates.map(d=>{
+            const dt=new Date(d+"T00:00:00"); const isToday=d===fmt(today); const isSel=d===selDate;
+            const hasBk=bookings.some(b=>b.date===d&&b.status!=="Cancelled");
+            return (
+              <button key={d} onClick={()=>setSelDate(d)} style={{padding:"10px 6px",borderRadius:10,border:`0.5px solid ${isSel?S.accent:S.border}`,background:isSel?S.accent:isToday?S.accentLight:S.surface2,color:isSel?"#fff":isToday?S.accent:S.text,cursor:"pointer",textAlign:"center",position:"relative"}}>
+                <div style={{fontSize:10,marginBottom:3,opacity:0.7,textTransform:"uppercase",letterSpacing:"0.05em"}}>{weekDays[dt.getDay()]}</div>
+                <div style={{fontSize:16,fontWeight:isSel||isToday?500:400}}>{dt.getDate()}</div>
+                {hasBk&&!isSel&&<div style={{width:5,height:5,borderRadius:"50%",background:S.accent,margin:"3px auto 0",opacity:0.5}}/>}
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+      <Card style={{padding:0,overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:`72px repeat(3,1fr)`}}>
+          <div style={{background:S.surface2,borderBottom:`0.5px solid ${S.border}`,padding:"10px 0"}}/>
+          {COURTS.map((c,i)=>(
+            <div key={c} style={{background:S.surface2,borderBottom:`0.5px solid ${S.border}`,borderLeft:`0.5px solid ${S.border}`,padding:"12px 16px",display:"flex",alignItems:"center",gap:8}}>
+              <div style={{width:8,height:8,borderRadius:"50%",background:[S.accent,"#0f6e56","#854f0b"][i],flexShrink:0}}/>
+              <div><div style={{fontSize:13,fontWeight:500}}>{c}</div><div style={{fontSize:10,color:S.muted}}>{bookings.filter(b=>b.date===selDate&&b.courtroom===c&&b.status!=="Cancelled").length} booking{bookings.filter(b=>b.date===selDate&&b.courtroom===c&&b.status!=="Cancelled").length!==1?"s":""} today</div></div>
+            </div>
+          ))}
+        </div>
+        <div style={{maxHeight:480,overflowY:"auto"}}>
+          {TIME_SLOTS.map((slot,si)=>(
+            <div key={slot} style={{display:"grid",gridTemplateColumns:`72px repeat(3,1fr)`,borderTop:`0.5px solid ${S.border}`}}>
+              <div style={{padding:"10px 12px",fontSize:11,color:S.hint,textAlign:"right",background:S.surface2,borderRight:`0.5px solid ${S.border}`}}>{slot}</div>
+              {COURTS.map((court,ci)=>{
+                const booking=getCell(selDate,court,slot);
+                const isStart=isSlotStart(selDate,court,slot);
+                const cA=[S.accent,"#0f6e56","#854f0b"][ci];
+                const cBL=[S.accentLight,"#e1f5ee","#faeeda"][ci];
+                const cBM=["#d0d8ee","#9fe1cb","#fac775"][ci];
+                if(isStart){
+                  const dur=timeToMins(isStart.timeEnd)-timeToMins(isStart.timeStart);
+                  return (
+                    <div key={court} onClick={()=>setViewBooking(isStart)} style={{borderLeft:`0.5px solid ${S.border}`,background:cBL,cursor:"pointer",padding:"8px 12px",minHeight:44*Math.max(1,dur/30),borderBottom:`2px solid ${cA}`}} onMouseEnter={e=>e.currentTarget.style.background=cBM} onMouseLeave={e=>e.currentTarget.style.background=cBL}>
+                      <div style={{fontSize:10,fontWeight:500,color:cA,marginBottom:2}}>{isStart.timeStart} – {isStart.timeEnd}</div>
+                      <div style={{fontSize:12,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isStart.caseTitle}</div>
+                      <div style={{fontSize:10,color:S.muted,marginTop:2}}>{isStart.judges.length} judges · {isStart.caseId}</div>
+                    </div>
+                  );
+                }
+                if(booking) return <div key={court} style={{borderLeft:`0.5px solid ${S.border}`,background:cBL,minHeight:44}}/>;
+                return (
+                  <div key={court} onClick={()=>setModal("newBooking")} style={{borderLeft:`0.5px solid ${S.border}`,minHeight:44,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"background 0.1s"}} onMouseEnter={e=>{e.currentTarget.style.background=S.surface2;e.currentTarget.querySelector?.("span")&&(e.currentTarget.querySelector("span").style.opacity="1");}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.querySelector?.("span")&&(e.currentTarget.querySelector("span").style.opacity="0");}}>
+                    <span style={{fontSize:10,color:S.muted,opacity:0,transition:"opacity 0.1s"}}>+ Book</span>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </Card>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:"1rem"}}>
+        {COURTS.map((court,ci)=>{
+          const bks=bookings.filter(b=>b.date===selDate&&b.courtroom===court&&b.status!=="Cancelled");
+          const booked=bks.reduce((acc,b)=>{let s=timeToMins(b.timeStart);while(s<timeToMins(b.timeEnd)){acc++;s+=30;}return acc;},0);
+          const pct=Math.round(booked/TIME_SLOTS.length*100);
+          return (
+            <div key={court} style={{background:S.surface,border:`0.5px solid ${S.border}`,borderRadius:10,padding:"12px 14px"}}>
+              <div style={{fontSize:12,fontWeight:500,marginBottom:6}}>{court}</div>
+              <div style={{fontSize:11,color:S.muted,marginBottom:6}}>{pct}% utilisation · {bks.length} hearing{bks.length!==1?"s":""}</div>
+              <div style={{height:4,background:S.surface2,borderRadius:99}}><div style={{height:4,width:`${pct}%`,background:[S.accent,"#0f6e56","#854f0b"][ci],borderRadius:99}}/></div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Targets ──────────────────────────────────────────────────────────────────
+function TargetsPage({ targets, setTargets }) {
+  const upd=(id,d)=>setTargets(p=>p.map(t=>t.id===id?{...t,current:Math.min(t.metric,Math.max(0,t.current+d))}:t));
+  return (
+    <div>
+      <div style={{fontSize:20,fontWeight:500,marginBottom:"1.25rem"}}>Targets</div>
+      {targets.map(t=>{
+        const pct=Math.min(100,Math.round(t.current/t.metric*100));
+        return (
+          <Card key={t.id} style={{marginBottom:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+              <div><Pill label={t.type} bg={S.accentLight} tc={S.accent} size={11}/><div style={{fontSize:14,fontWeight:500,marginTop:6}}>{t.description}</div><div style={{fontSize:11,color:S.muted,marginTop:2}}>{t.assignee} · Due {t.deadline}</div></div>
+              <div style={{fontSize:24,fontWeight:500}}>{pct}%</div>
+            </div>
+            <div style={{height:6,background:S.surface2,borderRadius:99,marginBottom:10}}><div style={{height:6,width:`${pct}%`,background:pct>=80?"#27500a":pct>=50?"#633806":"#A32D2D",borderRadius:99}}/></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:12,color:S.muted}}>{t.current} of {t.metric} complete</span>
+              <div style={{display:"flex",gap:6}}>
+                <button onClick={()=>upd(t.id,-1)} style={{width:28,height:28,borderRadius:6,border:`0.5px solid ${S.border2}`,background:S.surface2,cursor:"pointer",fontSize:15,color:S.text}}>−</button>
+                <button onClick={()=>upd(t.id,1)} style={{width:28,height:28,borderRadius:6,border:`0.5px solid ${S.border2}`,background:S.surface2,cursor:"pointer",fontSize:15,color:S.text}}>+</button>
+              </div>
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Tasks ────────────────────────────────────────────────────────────────────
+function TasksPage({ cases, updateCase, setModal }) {
+  const [sortBy, setSortBy] = useState("recent");
+  const [filterPriority, setFilterPriority] = useState("All");
+  const allTasks = cases.flatMap(c=>c.tasks.map(t=>({...t,caseId:c.id,caseTitle:c.title})));
+  const filtered = allTasks.filter(t=>filterPriority==="All"||t.priority===filterPriority).sort((a,b)=>{
+    if(sortBy==="priority"){const o={High:0,Medium:1,Low:2};return (o[a.priority]||1)-(o[b.priority]||1);}
+    if(sortBy==="due") return (a.due||"9999").localeCompare(b.due||"9999");
+    return (b.id||0)-(a.id||0);
+  });
+  const done=allTasks.filter(t=>t.done).length, open=allTasks.filter(t=>!t.done).length, high=allTasks.filter(t=>t.priority==="High"&&!t.done).length;
+  const pAccent={High:["#fcebeb","#A32D2D"],Medium:["#faeeda","#633806"],Low:["#eaf3de","#27500a"]};
+  const typeAccents=["#1a2744","#0f6e56","#854f0b","#534AB7","#993556"];
+  const caseGroups=cases.map((c,i)=>({...c,openTasks:c.tasks.filter(t=>!t.done),doneTasks:c.tasks.filter(t=>t.done),accent:typeAccents[i%typeAccents.length]})).filter(c=>c.tasks.length>0);
+
+  return (
+    <div style={{display:"grid",gridTemplateColumns:"1fr 280px",gap:"1.5rem",alignItems:"start"}}>
+      <div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1.5rem"}}>
+          <div><div style={{fontSize:20,fontWeight:500,marginBottom:2}}>My tasks</div><div style={{fontSize:13,color:S.muted}}>{open} open · {done} completed</div></div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:S.muted}}>Sort by
+              <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{padding:"5px 10px",borderRadius:7,border:`0.5px solid ${S.border}`,background:S.surface,color:S.text,fontSize:12}}>
+                <option value="recent">Recent</option><option value="priority">Priority</option><option value="due">Due date</option>
+              </select>
+            </div>
+            <div style={{display:"flex",border:`0.5px solid ${S.border}`,borderRadius:8,overflow:"hidden"}}>
+              {["All","High","Medium","Low"].map(p=><button key={p} onClick={()=>setFilterPriority(p)} style={{padding:"5px 12px",border:"none",background:filterPriority===p?S.accent:"none",color:filterPriority===p?"#fff":S.muted,fontSize:11,cursor:"pointer",fontWeight:filterPriority===p?500:400}}>{p}</button>)}
+            </div>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:"1rem"}}>
+          {caseGroups.map(c=>{
+            const pct=c.tasks.length?Math.round(c.doneTasks.length/c.tasks.length*100):0;
+            return (
+              <div key={c.id} style={{background:S.surface,border:`0.5px solid ${S.border}`,borderRadius:14,padding:"1.1rem 1.25rem",display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
+                  <div style={{width:4,height:36,borderRadius:99,background:c.accent,flexShrink:0}}/>
+                  <div style={{minWidth:0}}><div style={{fontSize:13,fontWeight:500,marginBottom:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.title.length>28?c.title.slice(0,28)+"...":c.title}</div><div style={{fontSize:10,color:S.muted}}>{c.id}</div></div>
+                </div>
+                <div style={{fontSize:12,color:S.muted,minHeight:32}}>
+                  {c.openTasks.slice(0,2).map(t=><div key={t.id} style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}><div style={{width:5,height:5,borderRadius:"50%",background:pAccent[t.priority||"Medium"]?.[1]||S.muted,flexShrink:0}}/><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.text}</span></div>)}
+                  {c.openTasks.length>2&&<div style={{fontSize:11,color:S.hint}}>+{c.openTasks.length-2} more</div>}
+                  {c.openTasks.length===0&&<div style={{fontSize:11,color:S.hint,fontStyle:"italic"}}>All tasks complete</div>}
+                </div>
+                <div><div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:S.muted,marginBottom:4}}><span>{pct}% complete</span><span>{c.doneTasks.length}/{c.tasks.length}</span></div><div style={{height:4,background:S.surface2,borderRadius:99}}><div style={{height:4,width:`${pct}%`,background:c.accent,borderRadius:99,transition:"width 0.3s"}}/></div></div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div style={{display:"flex"}}>{[...new Set(c.tasks.filter(t=>t.assignee).map(t=>t.assignee))].slice(0,3).map((a,i)=><div key={a} style={{marginLeft:i>0?-6:0,zIndex:3-i}}><Avatar name={a} size={24} bg={S.accentLight} tc={S.accent}/></div>)}{[...new Set(c.tasks.filter(t=>t.assignee).map(t=>t.assignee))].length===0&&<span style={{fontSize:10,color:S.hint}}>No assignees</span>}</div>
+                  <div style={{display:"flex",gap:4}}><span style={{fontSize:10,color:S.muted,background:S.surface2,padding:"2px 7px",borderRadius:99}}>{c.openTasks.length} open</span>{c.tasks.some(t=>t.priority==="High"&&!t.done)&&<span style={{fontSize:10,background:"#fcebeb",color:"#A32D2D",padding:"2px 7px",borderRadius:99}}>High</span>}</div>
+                </div>
+              </div>
+            );
+          })}
+          {caseGroups.length===0&&<div style={{gridColumn:"1/-1",textAlign:"center",padding:"3rem",color:S.muted,fontSize:13}}>No tasks yet.</div>}
+        </div>
+        {filtered.length>0&&(
+          <div style={{marginTop:"1.5rem"}}>
+            <div style={{fontSize:11,fontWeight:500,marginBottom:"0.75rem",color:S.muted,textTransform:"uppercase",letterSpacing:"0.07em"}}>All tasks · {filtered.length}</div>
+            <Card style={{padding:0,overflow:"hidden"}}>
+              <div style={{display:"grid",gridTemplateColumns:"2fr 1.2fr 90px 90px 70px",background:S.surface2,borderBottom:`0.5px solid ${S.border}`}}>
+                {["Task","Assigned to","Priority","Due","Status"].map(h=><div key={h} style={{padding:"8px 14px",fontSize:10,color:S.muted,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</div>)}
+              </div>
+              {filtered.map((t,i)=>(
+                <div key={t.id+t.caseId} style={{display:"grid",gridTemplateColumns:"2fr 1.2fr 90px 90px 70px",borderTop:i>0?`0.5px solid ${S.border}`:"none",opacity:t.done?0.5:1,transition:"background 0.1s"}} onMouseEnter={e=>e.currentTarget.style.background=S.surface2} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:8}}><input type="checkbox" checked={t.done} onChange={()=>updateCase(t.caseId,c=>({...c,tasks:c.tasks.map(tk=>tk.id===t.id?{...tk,done:!tk.done}:tk)}))} style={{cursor:"pointer",width:13,height:13,flexShrink:0}}/><div style={{minWidth:0}}><div style={{fontSize:12,textDecoration:t.done?"line-through":"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.text}</div><div style={{fontSize:10,color:S.muted}}>{t.caseId}</div></div></div>
+                  <div style={{padding:"10px 14px",display:"flex",alignItems:"center"}}>{t.assignee?<div style={{display:"flex",alignItems:"center",gap:6}}><Avatar name={t.assignee} size={22}/><span style={{fontSize:11,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:80}}>{t.assignee.replace("Hon. ","")}</span></div>:<span style={{fontSize:11,color:S.hint}}>—</span>}</div>
+                  <div style={{padding:"10px 14px",display:"flex",alignItems:"center"}}><Pill label={t.priority||"Medium"} bg={pAccent[t.priority||"Medium"]?.[0]} tc={pAccent[t.priority||"Medium"]?.[1]} size={10}/></div>
+                  <div style={{padding:"10px 14px",display:"flex",alignItems:"center",fontSize:11,color:t.due?S.text:S.hint}}>{t.due||"—"}</div>
+                  <div style={{padding:"10px 14px",display:"flex",alignItems:"center"}}><Pill label={t.done?"Done":"Open"} bg={t.done?S.success:S.surface2} tc={t.done?S.successT:S.muted} size={10}/></div>
+                </div>
+              ))}
+            </Card>
+          </div>
+        )}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:"1rem"}}>
+        <Card style={{padding:"1.25rem"}}>
+          <div style={{fontSize:13,fontWeight:500,marginBottom:"1rem"}}>Total tasks</div>
+          <div style={{position:"relative",width:120,height:120,margin:"0 auto 1rem"}}>
+            <svg viewBox="0 0 120 120" style={{width:120,height:120,transform:"rotate(-90deg)"}}>
+              <circle cx="60" cy="60" r="48" fill="none" stroke={S.surface2} strokeWidth="10"/>
+              <circle cx="60" cy="60" r="48" fill="none" stroke={S.accent} strokeWidth="10" strokeDasharray={`${2*Math.PI*48}`} strokeDashoffset={`${2*Math.PI*48*(1-(done/Math.max(allTasks.length,1)))}`} strokeLinecap="round"/>
+              <circle cx="60" cy="60" r="38" fill="none" stroke="#faeeda" strokeWidth="6"/>
+              <circle cx="60" cy="60" r="38" fill="none" stroke="#854f0b" strokeWidth="6" strokeDasharray={`${2*Math.PI*38}`} strokeDashoffset={`${2*Math.PI*38*(1-(high/Math.max(allTasks.length,1)))}`} strokeLinecap="round"/>
+            </svg>
+            <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}><div style={{fontSize:20,fontWeight:500}}>{done}</div><div style={{fontSize:10,color:S.muted}}>done</div></div>
+          </div>
+          <div style={{fontSize:13,fontWeight:500,textAlign:"center",marginBottom:2}}>{done} Completed</div>
+          <div style={{fontSize:11,color:S.muted,textAlign:"center",marginBottom:"1rem"}}>from {allTasks.length} tasks</div>
+          <div style={{display:"flex",justifyContent:"space-around",borderTop:`0.5px solid ${S.border}`,paddingTop:"0.75rem"}}>
+            {[["Open",open,S.accent],["High",high,"#A32D2D"],["Done",done,"#27500a"]].map(([l,v,c])=>(
+              <div key={l} style={{textAlign:"center"}}><div style={{fontSize:16,fontWeight:500,color:c}}>{v}</div><div style={{fontSize:10,color:S.muted}}>{l}</div></div>
+            ))}
+          </div>
+        </Card>
+        <Card style={{padding:"1.25rem"}}>
+          <div style={{fontSize:13,fontWeight:500,marginBottom:"0.75rem"}}>By case</div>
+          {caseGroups.slice(0,5).map((c,i)=>(
+            <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderTop:i>0?`0.5px solid ${S.border}`:"none"}}>
+              <div style={{width:8,height:8,borderRadius:"50%",background:c.accent,flexShrink:0}}/>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.title.split(" ").slice(0,4).join(" ")}</div><div style={{fontSize:10,color:S.muted}}>{c.openTasks.length} open</div></div>
+              <span style={{fontSize:11,color:S.muted,flexShrink:0}}>{c.tasks.length}</span>
+            </div>
+          ))}
+          {caseGroups.length===0&&<div style={{fontSize:12,color:S.hint,textAlign:"center",padding:"0.5rem"}}>No tasks yet.</div>}
+        </Card>
+        <Card style={{padding:"1.25rem"}}>
+          <div style={{fontSize:13,fontWeight:500,marginBottom:"0.75rem"}}>Due soon</div>
+          {allTasks.filter(t=>!t.done&&t.due).sort((a,b)=>a.due.localeCompare(b.due)).slice(0,4).map((t,i)=>(
+            <div key={t.id+t.caseId} style={{display:"flex",gap:10,padding:"7px 0",borderTop:i>0?`0.5px solid ${S.border}`:"none",alignItems:"center"}}>
+              <div style={{background:pAccent[t.priority||"Medium"]?.[0],borderRadius:7,padding:"4px 7px",flexShrink:0,textAlign:"center",minWidth:36}}><div style={{fontSize:11,fontWeight:500,color:pAccent[t.priority||"Medium"]?.[1]}}>{t.due?.slice(5)}</div></div>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.text}</div><div style={{fontSize:10,color:S.muted}}>{t.caseId}</div></div>
+            </div>
+          ))}
+          {allTasks.filter(t=>!t.done&&t.due).length===0&&<div style={{fontSize:12,color:S.hint,textAlign:"center",padding:"0.5rem"}}>No upcoming deadlines.</div>}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ─── Requests ────────────────────────────────────────────────────────────────
+function RequestsPage({ cases, updateCase }) {
+  const all = cases.flatMap(c=>(c.requests||[]).map(r=>({...r,caseId:c.id,caseTitle:c.title})));
+  const decide=(cid,rid,status)=>updateCase(cid,c=>({...c,requests:c.requests.map(r=>r.id===rid?{...r,status}:r)}));
+  return (
+    <div>
+      <div style={{fontSize:20,fontWeight:500,marginBottom:"1.25rem"}}>Party requests</div>
+      {all.length===0?<div style={{color:S.muted,fontSize:13,textAlign:"center",padding:"3rem"}}>No requests filed.</div>:all.map(r=>(
+        <Card key={r.id} style={{marginBottom:10}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+            <div style={{flex:1}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}><Pill label={r.type} bg={r.type==="Expedite"?S.danger:S.warn} tc={r.type==="Expedite"?S.dangerT:S.warnT} size={12}/><span style={{fontSize:13,fontWeight:500}}>{r.caseId}</span><Pill label={r.status} size={11}/></div>
+              <div style={{fontSize:13,marginBottom:2}}>{r.reason}</div>
+              {r.proposedDate&&<div style={{fontSize:11,color:S.muted}}>Proposed: {r.proposedDate}</div>}
+              <div style={{fontSize:11,color:S.hint,marginTop:4}}>Filed by {r.filedBy} · {r.submittedAt}</div>
+            </div>
+            {r.status==="Pending"&&(
+              <div style={{display:"flex",gap:6,marginLeft:12}}>
+                <Btn variant="ghost" style={{padding:"5px 12px",fontSize:12,color:S.successT}} onClick={()=>decide(r.caseId,r.id,"Approved")}>Approve</Btn>
+                <Btn variant="ghost" style={{padding:"5px 12px",fontSize:12,color:S.dangerT}} onClick={()=>decide(r.caseId,r.id,"Rejected")}>Reject</Btn>
+              </div>
+            )}
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ─── Modals ───────────────────────────────────────────────────────────────────
+function NewCaseModal({ cases, setCases, onClose }) {
+  const [f,setF]=useState({title:"",type:"Civil",status:"Pending",filed:"",presiding:JUDGES[0],panelJudges:[JUDGES[1],JUDGES[2]],petName:"",petLawyers:[],resName:"",resLawyers:[],hasRes:true});
+  const upd=(k,v)=>setF(p=>({...p,[k]:v}));
+  const toggleArr=(k,v)=>setF(p=>({...p,[k]:p[k].includes(v)?p[k].filter(x=>x!==v):[...p[k],v]}));
+  const save=()=>{
+    if(!f.title||!f.filed||!f.petName) return;
+    const judges=[f.presiding,...f.panelJudges.filter(j=>j!==f.presiding)];
+    if(judges.length<3){alert("At least 3 judges required.");return;}
+    setCases(p=>[...p,{id:`HC/${new Date().getFullYear()}/${String(p.length+1).padStart(3,"0")}`,title:f.title,type:f.type,status:f.status,filed:f.filed,presiding:f.presiding,judges,petitioner:{name:f.petName,lawyers:f.petLawyers},respondent:f.hasRes?{name:f.resName,lawyers:f.resLawyers}:null,hearings:[],tasks:[],requests:[]}]);
+    onClose();
+  };
+  return (
+    <Modal title="Register new case" onClose={onClose}>
+      <Input label="Case title *" value={f.title} onChange={e=>upd("title",e.target.value)} placeholder="e.g. State v. John Doe"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <Sel label="Type" value={f.type} onChange={e=>upd("type",e.target.value)} options={["Civil","Criminal","Constitutional","Probate","Commercial","Administrative","Appeal"]}/>
+        <Input label="Date filed *" type="date" value={f.filed} onChange={e=>upd("filed",e.target.value)}/>
+      </div>
+      <Sel label="Presiding judge *" value={f.presiding} onChange={e=>upd("presiding",e.target.value)} options={JUDGES}/>
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:11,color:S.muted,display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em"}}>Panel judges (min. 2 more)</label>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+          {JUDGES.filter(j=>j!==f.presiding).map(j=><label key={j} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,padding:"5px 8px",borderRadius:6,background:f.panelJudges.includes(j)?S.accentLight:"none",cursor:"pointer"}}><input type="checkbox" checked={f.panelJudges.includes(j)} onChange={()=>toggleArr("panelJudges",j)}/>{j.replace("Hon. ","")}</label>)}
+        </div>
+      </div>
+      <div style={{borderTop:`0.5px solid ${S.border}`,paddingTop:12,marginBottom:12}}>
+        <div style={{fontSize:12,fontWeight:500,marginBottom:8}}>Petitioner *</div>
+        <Input label="Name" value={f.petName} onChange={e=>upd("petName",e.target.value)}/>
+        <div style={{fontSize:11,color:S.muted,marginBottom:4}}>Lawyers</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>{LAWYERS.map(l=><label key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,padding:"3px 6px",cursor:"pointer"}}><input type="checkbox" checked={f.petLawyers.includes(l)} onChange={()=>toggleArr("petLawyers",l)}/>{l}</label>)}</div>
+      </div>
+      <div style={{borderTop:`0.5px solid ${S.border}`,paddingTop:12,marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><div style={{fontSize:12,fontWeight:500}}>Respondent</div><label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:S.muted,cursor:"pointer"}}><input type="checkbox" checked={!f.hasRes} onChange={e=>upd("hasRes",!e.target.checked)}/> Ex-parte</label></div>
+        {f.hasRes&&<><Input label="Name" value={f.resName} onChange={e=>upd("resName",e.target.value)}/><div style={{fontSize:11,color:S.muted,marginBottom:4}}>Lawyers</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>{LAWYERS.map(l=><label key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,padding:"3px 6px",cursor:"pointer"}}><input type="checkbox" checked={f.resLawyers.includes(l)} onChange={()=>toggleArr("resLawyers",l)}/>{l}</label>)}</div></>}
+      </div>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Btn variant="ghost" onClick={onClose}>Cancel</Btn><Btn variant="primary" onClick={save}>Register case</Btn></div>
+    </Modal>
+  );
+}
+
+function NewTargetModal({ targets, setTargets, onClose }) {
+  const [f,setF]=useState({type:"Case Resolution",description:"",metric:"",current:"0",deadline:"",assignee:JUDGES[0]});
+  const save=()=>{if(!f.description||!f.metric||!f.deadline)return;setTargets(p=>[...p,{id:Date.now(),...f,metric:Number(f.metric),current:Number(f.current)}]);onClose();};
+  return (
+    <Modal title="Create target" onClose={onClose} width={440}>
+      <Sel label="Type" value={f.type} onChange={e=>setF(p=>({...p,type:e.target.value}))} options={["Case Resolution","Performance","Hearing Completion"]}/>
+      <Input label="Description *" value={f.description} onChange={e=>setF(p=>({...p,description:e.target.value}))} placeholder="e.g. Close 20 criminal cases by Q2"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <Input label="Target number *" type="number" value={f.metric} onChange={e=>setF(p=>({...p,metric:e.target.value}))}/>
+        <Input label="Current progress" type="number" value={f.current} onChange={e=>setF(p=>({...p,current:e.target.value}))}/>
+      </div>
+      <Input label="Deadline *" type="date" value={f.deadline} onChange={e=>setF(p=>({...p,deadline:e.target.value}))}/>
+      <Sel label="Assigned to" value={f.assignee} onChange={e=>setF(p=>({...p,assignee:e.target.value}))} options={["All Judges","Court Admin",...JUDGES]}/>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Btn variant="ghost" onClick={onClose}>Cancel</Btn><Btn variant="primary" onClick={save}>Create</Btn></div>
+    </Modal>
+  );
+}
+
+function NewTaskModal({ caseData, updateCase, onClose, existing }) {
+  const isEdit=!!existing;
+  const [f,setF]=useState(existing||{text:"",assignee:"",due:"",priority:"Medium",notes:""});
+  const upd=(k,v)=>setF(p=>({...p,[k]:v}));
+  const allPeople=[...JUDGES,...LAWYERS,"Clerk A","Clerk B","Registrar","Court Officer"];
+  const save=()=>{
+    if(!f.text) return;
+    if(isEdit){updateCase(caseData.id,c=>({...c,tasks:c.tasks.map(t=>t.id===existing.id?{...t,...f}:t)}));}
+    else{updateCase(caseData.id,c=>({...c,tasks:[...c.tasks,{id:Date.now(),...f,done:false,createdAt:new Date().toLocaleDateString()}]}));}
+    onClose();
+  };
+  return (
+    <Modal title={isEdit?"Edit task":"New task"} subtitle={`${caseData.id} — ${caseData.title}`} onClose={onClose} width={500}>
+      <Input label="Task description *" value={f.text} onChange={e=>upd("text",e.target.value)} placeholder="Describe the task..."/>
+      <div style={{marginBottom:12}}>
+        <label style={{display:"block",fontSize:11,color:S.muted,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.06em"}}>Assign to</label>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+          {allPeople.map(p=>{
+            const sel=f.assignee===p; const isJudge=JUDGES.includes(p);
+            return (
+              <button key={p} onClick={()=>upd("assignee",sel?"":p)} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:8,border:`0.5px solid ${sel?S.accent:S.border}`,background:sel?S.accentLight:S.surface2,cursor:"pointer",textAlign:"left"}}>
+                <Avatar name={p} size={26} bg={sel?S.accentMid:isJudge?S.accentLight:S.surface3} tc={sel?"#fff":isJudge?S.accent:S.muted}/>
+                <div style={{minWidth:0}}><div style={{fontSize:12,fontWeight:sel?500:400,color:sel?S.accent:S.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.replace("Hon. ","")}</div><div style={{fontSize:10,color:S.muted}}>{isJudge?"Judge":LAWYERS.includes(p)?"Lawyer":"Staff"}</div></div>
+                {sel&&<div style={{marginLeft:"auto",width:16,height:16,borderRadius:"50%",background:S.accent,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:"#fff",fontSize:10}}>✓</span></div>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <Sel label="Priority" value={f.priority} onChange={e=>upd("priority",e.target.value)} options={["High","Medium","Low"]}/>
+        <Input label="Due date" type="date" value={f.due} onChange={e=>upd("due",e.target.value)}/>
+      </div>
+      <Textarea label="Notes (optional)" value={f.notes||""} onChange={e=>upd("notes",e.target.value)} rows={2}/>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Btn variant="ghost" onClick={onClose}>Cancel</Btn><Btn variant="primary" onClick={save}>{isEdit?"Save changes":"Add task"}</Btn></div>
+    </Modal>
+  );
+}
+
+function NewRequestModal({ caseData, updateCase, onClose }) {
+  const [f,setF]=useState({type:"Expedite",reason:"",urgency:"Medium",proposedDate:"",filedBy:""});
+  const all=[caseData.petitioner.name,...(caseData.respondent?[caseData.respondent.name]:[]),...caseData.petitioner.lawyers,...(caseData.respondent?.lawyers||[])];
+  const save=()=>{if(!f.reason||!f.filedBy)return;updateCase(caseData.id,c=>({...c,requests:[...(c.requests||[]),{id:Date.now(),...f,status:"Pending",submittedAt:new Date().toLocaleDateString()}]}));onClose();};
+  return (
+    <Modal title="File request" subtitle={`${caseData.id} — ${caseData.title}`} onClose={onClose} width={480}>
+      <Sel label="Request type" value={f.type} onChange={e=>setF(p=>({...p,type:e.target.value}))} options={["Expedite","Adjournment"]}/>
+      <Sel label="Filed by *" value={f.filedBy} onChange={e=>setF(p=>({...p,filedBy:e.target.value}))} options={["",...all]}/>
+      <Textarea label="Reason *" value={f.reason} onChange={e=>setF(p=>({...p,reason:e.target.value}))} rows={3}/>
+      {f.type==="Expedite"&&<Sel label="Urgency" value={f.urgency} onChange={e=>setF(p=>({...p,urgency:e.target.value}))} options={["Low","Medium","High","Critical"]}/>}
+      {f.type==="Adjournment"&&<Input label="Proposed new date" type="date" value={f.proposedDate} onChange={e=>setF(p=>({...p,proposedDate:e.target.value}))}/>}
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Btn variant="ghost" onClick={onClose}>Cancel</Btn><Btn variant="primary" onClick={save}>Submit</Btn></div>
+    </Modal>
+  );
+}
+
+function BookingModal({ bookings, setBookings, cases, existing, onClose }) {
+  const isEdit=!!existing;
+  const [f,setF]=useState(existing?{...existing}:{caseId:cases[0]?.id||"",courtroom:COURTS[0],date:"",timeStart:"09:00",timeEnd:"10:30",judges:[],parties:[],lawyers:[],notes:"",status:"Confirmed"});
+  const [clashes,setClashes]=useState([]);
+  const [checked,setChecked]=useState(false);
+  const selCase=cases.find(c=>c.id===f.caseId);
+  useEffect(()=>{if(selCase&&!isEdit){setF(p=>({...p,judges:selCase.judges,parties:[selCase.petitioner.name,...(selCase.respondent?[selCase.respondent.name]:[])],lawyers:[...selCase.petitioner.lawyers,...(selCase.respondent?.lawyers||[])]}));}},  [f.caseId]);
+  const upd=(k,v)=>{setF(p=>({...p,[k]:v}));setChecked(false);setClashes([]);};
+  const toggleArr=(k,v)=>{setF(p=>({...p,[k]:p[k].includes(v)?p[k].filter(x=>x!==v):[...p[k],v]}));setChecked(false);setClashes([]);};
+  const checkClashes=()=>{
+    if(!f.date||!f.timeStart||!f.timeEnd){alert("Please fill date and times.");return;}
+    if(f.judges.length<3){setClashes([{type:"validation",msg:"At least 3 judges required."}]);setChecked(true);return;}
+    setClashes(detectClashes(bookings,f,isEdit?existing.id:null));setChecked(true);
+  };
+  const save=()=>{
+    if(!f.date||!f.timeStart||!f.timeEnd||!f.caseId){alert("Fill all required fields.");return;}
+    if(f.judges.length<3){alert("At least 3 judges required.");return;}
+    const hard=clashes.filter(c=>c.type!=="lawyer"&&c.type!=="party");
+    if(hard.length>0&&!window.confirm("Scheduling conflicts detected. Save anyway?")) return;
+    if(isEdit){setBookings(p=>p.map(b=>b.id===existing.id?{...f,id:existing.id,caseTitle:selCase?.title||f.caseTitle}:b));}
+    else{setBookings(p=>[...p,{...f,id:Date.now(),caseTitle:selCase?.title||""}]);}
+    onClose();
+  };
+  const allJudges=JUDGES;
+  const allLawyers=selCase?[...new Set([...selCase.petitioner.lawyers,...(selCase.respondent?.lawyers||[])])]:LAWYERS;
+  const allParties=selCase?[selCase.petitioner.name,...(selCase.respondent?[selCase.respondent.name]:[])]:[];
+  return (
+    <Modal title={isEdit?"Edit booking":"Book courtroom"} onClose={onClose} width={600}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <Sel label="Case *" value={f.caseId} onChange={e=>upd("caseId",e.target.value)} options={cases.map(c=>({value:c.id,label:c.id}))}/>
+        <Sel label="Courtroom *" value={f.courtroom} onChange={e=>upd("courtroom",e.target.value)} options={COURTS}/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+        <Input label="Date *" type="date" value={f.date} onChange={e=>upd("date",e.target.value)}/>
+        <Sel label="Start time *" value={f.timeStart} onChange={e=>upd("timeStart",e.target.value)} options={TIME_SLOTS}/>
+        <Sel label="End time *" value={f.timeEnd} onChange={e=>upd("timeEnd",e.target.value)} options={TIME_SLOTS.filter(t=>t>f.timeStart)}/>
+      </div>
+      <div style={{borderTop:`0.5px solid ${S.border}`,paddingTop:12,marginBottom:12}}>
+        <div style={{fontSize:12,fontWeight:500,marginBottom:8}}>Judges <span style={{color:S.muted,fontWeight:400}}>(min. 3, max. 5)</span></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+          {allJudges.map(j=>{const sel=f.judges.includes(j);return(<label key={j} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,padding:"5px 8px",borderRadius:6,background:sel?S.accentLight:"none",cursor:"pointer"}}><input type="checkbox" checked={sel} onChange={()=>toggleArr("judges",j)} disabled={!sel&&f.judges.length>=5}/>{j.replace("Hon. ","")}</label>);})}
+        </div>
+        {f.judges.length<3&&<div style={{fontSize:11,color:S.dangerT,marginTop:4}}>Select at least 3 judges.</div>}
+      </div>
+      {allParties.length>0&&<div style={{marginBottom:12}}><div style={{fontSize:12,fontWeight:500,marginBottom:6}}>Parties</div><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{allParties.map(p=><label key={p} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,padding:"4px 10px",borderRadius:99,background:f.parties.includes(p)?S.accentLight:S.surface2,border:`0.5px solid ${f.parties.includes(p)?S.accentMid:S.border}`,cursor:"pointer",color:f.parties.includes(p)?S.accent:S.text}}><input type="checkbox" checked={f.parties.includes(p)} onChange={()=>toggleArr("parties",p)} style={{display:"none"}}/>{p}</label>)}</div></div>}
+      <div style={{marginBottom:12}}><div style={{fontSize:12,fontWeight:500,marginBottom:6}}>Counsel</div><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{allLawyers.map(l=><label key={l} style={{display:"flex",alignItems:"center",gap:5,fontSize:12,padding:"4px 10px",borderRadius:99,background:f.lawyers.includes(l)?S.accentLight:S.surface2,border:`0.5px solid ${f.lawyers.includes(l)?S.accentMid:S.border}`,cursor:"pointer",color:f.lawyers.includes(l)?S.accent:S.text}}><input type="checkbox" checked={f.lawyers.includes(l)} onChange={()=>toggleArr("lawyers",l)} style={{display:"none"}}/>{l}</label>)}</div></div>
+      <Textarea label="Notes" value={f.notes} onChange={e=>upd("notes",e.target.value)} rows={2}/>
+      {checked&&(clashes.length===0?<div style={{marginBottom:12,background:S.success,color:S.successT,padding:"10px 14px",borderRadius:8,fontSize:13}}>No conflicts detected. All clear.</div>:<div style={{marginBottom:12,background:S.danger,color:S.dangerT,padding:"10px 14px",borderRadius:8,fontSize:13}}><div style={{fontWeight:500,marginBottom:6}}>{clashes.length} conflict{clashes.length>1?"s":""} detected:</div>{clashes.map((c,i)=><div key={i} style={{display:"flex",gap:6,marginBottom:3,alignItems:"flex-start"}}><span style={{fontSize:10,marginTop:2,background:S.dangerT,color:S.danger,padding:"1px 5px",borderRadius:99,textTransform:"uppercase",flexShrink:0}}>{c.type}</span><span style={{fontSize:12}}>{c.msg}</span></div>)}</div>)}
+      <div style={{display:"flex",gap:8,justifyContent:"space-between",alignItems:"center",paddingTop:4}}>
+        <Btn variant="ghost" onClick={checkClashes}>Check for clashes</Btn>
+        <div style={{display:"flex",gap:8}}><Btn variant="ghost" onClick={onClose}>Cancel</Btn><Btn variant="primary" onClick={save}>{isEdit?"Save changes":"Confirm booking"}</Btn></div>
+      </div>
+    </Modal>
+  );
+}
